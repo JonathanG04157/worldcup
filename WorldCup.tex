@@ -1,0 +1,522 @@
+\documentclass[12pt,a4paper]{article}
+
+% ── Packages ────────────────────────────────────────────────────────────────
+\usepackage[margin=2.5cm]{geometry}
+\usepackage{amsmath, amssymb}
+\usepackage{booktabs}
+\usepackage{xcolor}
+\usepackage{listings}
+\usepackage{hyperref}
+\usepackage{parskip}
+\usepackage{microtype}
+\usepackage{titlesec}
+\usepackage{enumitem}
+\usepackage{graphicx}
+\usepackage{float}
+
+% ── Colour scheme ────────────────────────────────────────────────────────────
+\definecolor{fifablue}{RGB}{0,55,140}
+\definecolor{codegreen}{RGB}{0,128,0}
+\definecolor{codegrey}{RGB}{128,128,128}
+\definecolor{codebg}{RGB}{248,248,248}
+\definecolor{codered}{RGB}{180,0,0}
+
+% ── Section formatting ───────────────────────────────────────────────────────
+\titleformat{\section}{\large\bfseries\color{fifablue}}{}{0em}{}[\titlerule]
+\titleformat{\subsection}{\normalsize\bfseries\color{fifablue!80!black}}{}{0em}{}
+
+% ── Code listings ────────────────────────────────────────────────────────────
+\lstset{
+  language=Python,
+  backgroundcolor=\color{codebg},
+  basicstyle=\ttfamily\small,
+  keywordstyle=\bfseries\color{fifablue},
+  commentstyle=\itshape\color{codegrey},
+  stringstyle=\color{codered},
+  showstringspaces=false,
+  breaklines=true,
+  frame=single,
+  rulecolor=\color{codegrey!40},
+  numbers=left,
+  numberstyle=\tiny\color{codegrey},
+  numbersep=8pt,
+  xleftmargin=1.5em,
+  framexleftmargin=1.5em,
+}
+
+% ── Hyperlink setup ──────────────────────────────────────────────────────────
+\hypersetup{
+  colorlinks=true,
+  linkcolor=fifablue,
+  urlcolor=fifablue,
+  citecolor=fifablue,
+}
+
+% ── Math convenience macros ──────────────────────────────────────────────────
+\newcommand{\Poi}{\operatorname{Poisson}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\Prob}{\mathbb{P}}
+
+% ────────────────────────────────────────────────────────────────────────────
+\begin{document}
+
+\begin{titlepage}
+  \centering
+  \vspace*{2cm}
+  {\color{fifablue}\rule{\linewidth}{1pt}}\\[0.4em]
+  {\huge\bfseries\color{fifablue} World Cup Predictor}\\[0.4em]
+  {\large A Technical Explanation of the Model, Mathematics, and Code}\\[0.2em]
+  {\color{fifablue}\rule{\linewidth}{1pt}}\\[1.5em]
+  {\large Ben Jordan \& Jonathan Glanfield}\\[0.5em]
+  {\normalsize \url{https://github.com/JonathanG04157/worldcup}}\\[0.5em]
+  {\normalsize 2026 FIFA World Cup --- USA / Canada / Mexico}\\[2cm]
+  {\small\itshape This document explains the full pipeline: how team
+  strengths are derived from FIFA rankings, how individual matches are
+  simulated using a Poisson model, how the tournament bracket is
+  constructed and resolved, and how the Monte~Carlo runner aggregates
+  100\,000 simulations into win probabilities.}
+  \vfill
+  {\small \today}
+\end{titlepage}
+
+\tableofcontents
+\newpage
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Overview}
+
+The predictor is a \emph{Monte~Carlo simulation} of the 2026 FIFA World
+Cup.  Each simulation plays out the entire tournament exactly once,
+from the group stage through to the final, by sampling random scorelines
+from a statistical model.  After running many thousands of simulations
+the code counts how often each team wins, reaches the semi-finals, and so
+on, thereby estimating win probabilities.
+
+The project consists of four Python modules and two data files:
+
+\begin{center}
+\begin{tabular}{lp{9cm}}
+\toprule
+\textbf{File} & \textbf{Purpose} \\
+\midrule
+\texttt{AttackDefenceStrength.py} & Converts FIFA ranking points into
+attack and defence strength scores. \\
+\texttt{MatchSim.py} & Simulates a single match using the Poisson
+model; handles extra time and penalties. \\
+\texttt{Tournament.py} & Defines the tournament structure---groups,
+fixtures, standings, knockout bracket. \\
+\texttt{TourSim.py} & Monte~Carlo runner: simulates the tournament
+$N$ times and writes output CSVs. \\
+\midrule
+\texttt{team\_rankings.csv} & FIFA ranking points per team. \\
+\texttt{team\_stats.csv} & Derived attack/defence values (written by
+\texttt{AttackDefenceStrength.py}). \\
+\bottomrule
+\end{tabular}
+\end{center}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Step 1 --- Team Strength from FIFA Rankings}
+\label{sec:strength}
+
+\subsection{The FIFA Ranking Points System}
+
+FIFA assigns each national team a \emph{points total} based on their
+results over the previous four years, with recent matches weighted more
+heavily.  The current range across the 48 World Cup participants runs
+from roughly 1\,275 (New Zealand) to 1\,877 (Argentina).
+
+\subsection{The Strength Mapping}
+
+Rather than using raw points directly, the code maps each team's points
+to a dimensionless \emph{strength} value centred on 1 via a linear
+transformation:
+
+\begin{equation}
+  \text{strength}(r) = 1 + \frac{r - 1500}{1000}
+  \label{eq:strength}
+\end{equation}
+
+where $r$ is the team's FIFA points.  A team rated at exactly 1\,500
+points receives strength $= 1.0$ (exactly average).  Argentina at
+$r \approx 1877$ receives strength $\approx 1.38$, while New Zealand at
+$r \approx 1276$ receives strength $\approx 0.78$.
+
+\subsection{Attack and Defence}
+
+Each team receives two derived attributes:
+
+\begin{align}
+  a_i &= \text{strength}(r_i) \label{eq:attack}\\
+  d_i &= 2 - \text{strength}(r_i) \label{eq:defence}
+\end{align}
+
+The constraint $a_i + d_i = 2$ is a deliberate design choice: better
+teams have a higher attack score \emph{and} a lower defence score, where
+a \emph{lower} defence score means \emph{fewer} goals conceded (see
+Section~\ref{sec:goals}).  The midpoint of both scales is 1.0.
+
+\subsection{Code: \texttt{AttackDefenceStrength.py}}
+
+\begin{lstlisting}
+import pandas as pd
+
+def rating_to_strength(rating, base=1.0):
+    return base + (rating - 1500) / 1000
+
+df = pd.read_csv('team_rankings.csv')
+
+fifa_rankings = dict(zip(df['Team'], df['Points']))
+team_stats = {
+    team: {
+        'attack':  rating_to_strength(rating),
+        'defence': 2.0 - rating_to_strength(rating)
+    }
+    for team, rating in fifa_rankings.items()
+}
+
+df['attack']  = df['Points'].apply(rating_to_strength)
+df['defence'] = df['Points'].apply(lambda r: 2.0 - rating_to_strength(r))
+df.to_csv('team_stats.csv', index=False)
+\end{lstlisting}
+
+The module both builds an in-memory dictionary \texttt{team\_stats} and
+persists the values to \texttt{team\_stats.csv} for inspection.
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Step 2 --- The Poisson Match Model}
+\label{sec:poisson}
+
+\subsection{Why the Poisson Distribution?}
+
+Football goals are \emph{rare, independent events} occurring at a roughly
+constant rate over 90 minutes --- exactly the conditions under which the
+Poisson distribution is the natural model.  If a team is expected to
+score $\lambda$ goals, the probability of them scoring exactly $k$ goals
+is:
+
+\begin{equation}
+  \Prob(X = k) = \frac{\lambda^k e^{-\lambda}}{k!}, \quad k = 0, 1, 2, \ldots
+  \label{eq:poisson}
+\end{equation}
+
+Crucially, the home and away goal tallies are drawn \emph{independently},
+so a full scoreline $(g_H, g_A)$ has probability
+
+\begin{equation}
+  \Prob(g_H, g_A) = \frac{\lambda_H^{g_H} e^{-\lambda_H}}{g_H!}
+                   \cdot
+                   \frac{\lambda_A^{g_A} e^{-\lambda_A}}{g_A!}.
+\end{equation}
+
+\subsection{Computing Expected Goals}
+\label{sec:goals}
+
+For a match between a home team $H$ and an away team $A$, the expected
+goals for each side are:
+
+\begin{align}
+  \lambda_H &= \lambda_0 \cdot a_H \cdot d_A \label{eq:lambdaH}\\
+  \lambda_A &= \lambda_0 \cdot a_A \cdot d_H \label{eq:lambdaA}
+\end{align}
+
+where $\lambda_0 = 2$ is a base rate (approximately the average number of
+goals per team per 90-minute international match), $a_i$ is the attack
+strength of team $i$ (equation~\ref{eq:attack}), and $d_i$ is the defence
+strength of team $i$ (equation~\ref{eq:defence}).
+
+The logic works as follows.  A strong attacking team ($a_H > 1$) inflates
+$\lambda_H$.  A weak defensive team ($d_A > 1$) also inflates $\lambda_H$
+because the stronger team's defence score is lower than 1 and the weaker
+team's defence score is greater than 1.  The product neatly encodes
+both effects simultaneously.
+
+\textbf{Worked example.}  Suppose Argentina ($a \approx 1.38$,
+$d \approx 0.62$) plays New Zealand ($a \approx 0.78$, $d \approx 1.22$):
+
+\begin{align*}
+  \lambda_{\text{ARG}} &= 2 \times 1.38 \times 1.22 \approx 3.37\\
+  \lambda_{\text{NZL}} &= 2 \times 0.78 \times 0.62 \approx 0.97
+\end{align*}
+
+Argentina is expected to score around 3.4 goals, New Zealand under 1.
+
+\subsection{Group-Stage Simulation}
+
+In the group stage draws are allowed, so the code simply samples:
+
+\begin{align*}
+  g_H &\sim \Poi(\lambda_H)\\
+  g_A &\sim \Poi(\lambda_A)
+\end{align*}
+
+and records the raw scoreline.
+
+\begin{lstlisting}
+def simulate_match_poisson(match, team_stats):
+    home = team_stats[match.home]
+    away = team_stats[match.away]
+    lambda_home = expected_goals(home, away)
+    lambda_away = expected_goals(away, home)
+    home_goals = np.random.poisson(lambda_home)
+    away_goals = np.random.poisson(lambda_away)
+    return {'home_goals': home_goals, 'away_goals': away_goals}
+\end{lstlisting}
+
+\subsection{Knockout-Stage Simulation}
+
+In the knockout stage a winner must emerge.  If the scores are level
+after 90 minutes, extra time is simulated using a scaled-down Poisson
+rate of $0.3\lambda$ (approximately 30 extra minutes relative to 90):
+
+\begin{align}
+  \delta_H &\sim \Poi(0.3 \, \lambda_H)\\
+  \delta_A &\sim \Poi(0.3 \, \lambda_A)
+\end{align}
+
+If the match is still drawn after extra time, a penalty shoot-out is
+resolved by a single Bernoulli trial.  The probability that the home
+team wins the shoot-out is:
+
+\begin{equation}
+  p_{\text{pen}} = 0.5 + 0.1 \cdot
+  \frac{r_H - r_A}{r_{\max} - r_{\min}}
+  \label{eq:penalty}
+\end{equation}
+
+where $r_H$ and $r_A$ are the FIFA points of the home and away teams
+respectively, and $r_{\max} - r_{\min} = 1877.27 - 1275.58$ is the
+maximum observed spread across all teams in the tournament.  This gives a
+slight advantage (up to $\pm 10\%$) to the higher-ranked team, but keeps
+the result fundamentally uncertain.
+
+\begin{lstlisting}
+if home_goals == away_goals:
+    extra_time = True
+    extra_home = np.random.poisson(lambda_home * 0.3)
+    extra_away = np.random.poisson(lambda_away * 0.3)
+    home_goals += extra_home
+    away_goals += extra_away
+
+    if home_goals == away_goals:
+        penalties = True
+        ranking_benefit = 0.1*(home['Points'] - away['Points']) \
+                          / (1877.27 - 1275.58)
+        if random.random() < 0.5 + ranking_benefit:
+            home_goals += 1
+        else:
+            away_goals += 1
+\end{lstlisting}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Step 3 --- Tournament Structure}
+\label{sec:tournament}
+
+\subsection{Groups}
+
+The 2026 World Cup features 48 teams split into 12 groups of four (groups
+A through L).  Within each group every team plays every other team once,
+giving $\binom{4}{2} = 6$ matches per group and $12 \times 6 = 72$
+group-stage matches in total.
+
+\begin{lstlisting}
+def generate_group_fixtures(groups):
+    return {
+        name: [Match(h, a) for h, a in combinations(teams, 2)]
+        for name, teams in groups.items()
+    }
+\end{lstlisting}
+
+\subsection{Group Standings}
+
+Teams are ranked within each group by the standard FIFA tiebreak rules:
+
+\begin{enumerate}[noitemsep]
+  \item Points ($W = 3$, $D = 1$, $L = 0$)
+  \item Goal difference ($\text{GF} - \text{GA}$)
+  \item Goals scored ($\text{GF}$)
+\end{enumerate}
+
+The top two teams in each group qualify automatically.
+
+\subsection{Third-Place Qualification}
+
+The 2026 format advances the eight best third-placed teams to the
+Round of 32.  The code collects all twelve third-placed teams, sorts them
+by the same tiebreak criteria as above, and selects the top eight.
+
+\subsection{The Knockout Bracket}
+
+The Round of 32 consists of 16 matches following the official 2026 FIFA
+bracket structure: group winners and runners-up are paired according to
+the published draw, while the eight best third-placed teams fill the
+remaining slots in ranked order.  Subsequent rounds are determined by
+pairing consecutive match winners:
+
+\[
+  \text{Round}_{n+1} = \bigl\{\,
+    \text{Match}(\text{winner}_{2i-1},\, \text{winner}_{2i})
+    \mid i = 1, 2, \ldots
+  \,\bigr\}
+\]
+
+The knockout rounds are: Round of 32 (16 matches), Round of 16
+(8 matches), Quarter-finals (4 matches), Semi-finals (2 matches),
+and the Final (1 match).
+
+\begin{lstlisting}
+def advance_round(matches):
+    winners = [m.winner for m in matches]
+    return [Match(winners[i], winners[i+1])
+            for i in range(0, len(winners), 2)]
+\end{lstlisting}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Step 4 --- Monte Carlo Simulation}
+\label{sec:montecarlo}
+
+\subsection{The Idea}
+
+Let $W_i$ be the event ``team $i$ wins the tournament''.  Its probability
+$\Prob(W_i)$ is analytically intractable because it depends on the
+random outcomes of up to seven matches, each of which determines the
+opponents in subsequent rounds.  The Monte~Carlo estimator replaces this
+with a frequency count:
+
+\begin{equation}
+  \hat{p}(W_i) = \frac{\text{number of simulations in which team } i
+  \text{ wins}}{N}
+  \label{eq:mc}
+\end{equation}
+
+By the Law of Large Numbers, $\hat{p}(W_i) \to \Prob(W_i)$ as
+$N \to \infty$.
+
+\subsection{Variance and Confidence}
+
+For a true win probability $p$, the standard error of the Monte~Carlo
+estimate is
+
+\begin{equation}
+  \sigma_{\hat{p}} = \sqrt{\frac{p(1-p)}{N}}.
+\end{equation}
+
+At $N = 100\,000$ simulations and $p = 0.2$ (a plausible win probability
+for a strong team), this gives $\sigma_{\hat{p}} \approx 0.0013$, or
+roughly $\pm 0.13\%$ --- more than sufficient for sweepstake purposes.
+
+\subsection{What is Recorded}
+
+For each run the simulator records:
+
+\begin{itemize}[noitemsep]
+  \item The champion.
+  \item The finalist (runner-up).
+  \item How far every team progressed (e.g.\ ``Quarter-finals'').
+  \item The full scoreline of every group and knockout match, including
+        whether the match went to extra time or penalties.
+\end{itemize}
+
+After $N$ runs, summary statistics are aggregated into several CSV files:
+\texttt{summary.csv} (win percentages per team), \texttt{champions.csv}
+(champion per run), \texttt{knockout\_results.csv},
+\texttt{group\_results.csv}, \texttt{deep\_runs.csv}, and three
+scoreline frequency files.
+
+\begin{lstlisting}
+N_SIMULATIONS = 100000
+
+for run_id in range(1, N_SIMULATIONS + 1):
+    group_fixtures = generate_group_fixtures(groups)
+    simulate_group_stage_silent(group_fixtures)
+
+    r32 = build_round_of_32(group_fixtures)
+    ko_results = simulate_knockout_silent(r32)
+
+    champion = ko_results['champion']
+    champion_counts[champion] += 1
+    ...
+\end{lstlisting}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Data Flow Summary}
+
+The full pipeline can be summarised as follows:
+
+\begin{enumerate}
+  \item \textbf{Input.} \texttt{team\_rankings.csv} provides FIFA
+        ranking points for each of the 48 teams.
+  \item \textbf{Strength derivation.} \texttt{AttackDefenceStrength.py}
+        converts each team's points into an attack strength $a_i$ and a
+        defence strength $d_i$ via the linear map
+        (equations~\ref{eq:attack}--\ref{eq:defence}), and writes the
+        result to \texttt{team\_stats.csv}.
+  \item \textbf{Match simulation.} For any pair of teams, \texttt{MatchSim.py}
+        computes expected goals $\lambda_H$ and $\lambda_A$
+        (equations~\ref{eq:lambdaH}--\ref{eq:lambdaA}), draws goals from
+        $\Poi(\lambda_H)$ and $\Poi(\lambda_A)$, and resolves ties in
+        knockout matches via scaled extra-time draws and a
+        ranking-weighted Bernoulli trial (equation~\ref{eq:penalty}).
+  \item \textbf{Tournament structure.} \texttt{Tournament.py} encodes the
+        full 2026 bracket: 12 round-robin groups, best-eight-third-place
+        qualification, and a 16-match knockout bracket through to the
+        final.
+  \item \textbf{Monte Carlo aggregation.} \texttt{TourSim.py} runs
+        $N = 100\,000$ independent simulations, tallies results, and
+        writes summary CSVs including win percentages and scoreline
+        frequency tables.
+\end{enumerate}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Assumptions and Limitations}
+
+\begin{description}[leftmargin=2em]
+  \item[No home advantage.] The model labels teams ``home'' and ``away''
+        for coding convenience but applies no home-ground boost.  In
+        practice, the three host nations (USA, Canada, Mexico) might
+        benefit from crowd support.
+  \item[Static team strengths.] Strengths are computed once from the
+        FIFA standings and held fixed throughout.  Injuries, squad
+        rotation, and tournament form are not modelled.
+  \item[Independent goals.] The Poisson model assumes the two teams' goal
+        tallies are independent, which is a known simplification---teams
+        often change tactics once they take the lead.
+  \item[Linear FIFA-to-strength mapping.] The transformation
+        (equation~\ref{eq:strength}) is a deliberate simplification.
+        More sophisticated models (e.g.\ Dixon--Coles) estimate
+        team-specific attack and defence parameters from historical match
+        data rather than inferring them from a single rating.
+  \item[Bracket simplification.] The official 2026 third-place slot
+        allocation rules are more complex than the code's ranked-order
+        assignment.  The code documents this explicitly as a simplification.
+\end{description}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section{Mathematical Summary}
+
+For quick reference, the key equations are:
+
+\begin{align}
+  a_i &= 1 + \frac{r_i - 1500}{1000} \tag{attack strength}\\[4pt]
+  d_i &= 2 - a_i \tag{defence strength}\\[4pt]
+  \lambda_H &= 2 \cdot a_H \cdot d_A \tag{home expected goals}\\[4pt]
+  \lambda_A &= 2 \cdot a_A \cdot d_H \tag{away expected goals}\\[4pt]
+  g_H \mid \lambda_H &\sim \Poi(\lambda_H) \tag{home goals}\\[4pt]
+  g_A \mid \lambda_A &\sim \Poi(\lambda_A) \tag{away goals}\\[4pt]
+  p_{\text{pen}} &= 0.5 + 0.1 \cdot \frac{r_H - r_A}{601.69}
+  \tag{penalty win probability}\\[4pt]
+  \hat{p}(W_i) &= \frac{1}{N}\sum_{n=1}^{N}
+    \mathbf{1}[\text{team } i \text{ wins run } n]
+  \tag{Monte Carlo estimator}
+\end{align}
+
+% ────────────────────────────────────────────────────────────────────────────
+\section*{Acknowledgements}
+
+The predictor was written by Ben Jordan and Jonathan Glanfield to
+accompany a sweepstake for the 2026 FIFA World Cup held jointly by
+the United States, Canada, and Mexico.  The source code is publicly
+available at
+\url{https://github.com/JonathanG04157/worldcup}.
+
+\end{document}
