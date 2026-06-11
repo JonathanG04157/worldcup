@@ -1,7 +1,7 @@
 import pandas as pd
 
 def rating_to_strength(rating, base=1.0):
-    return base + (rating - 1500) / 750
+    return base + (rating - 1500) / 1000
 
 df = pd.read_csv('team_rankings.csv')
 

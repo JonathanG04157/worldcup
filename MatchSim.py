@@ -4,7 +4,7 @@ import random
 
 def expected_goals(attack_team, defence_team):
 
-    BASE_GOALS = 1.2   # average goals per team per game in international football, assumed 90 mins
+    BASE_GOALS = 2   # average goals per team per game in international football, assumed 90 mins
 
     """
     Expected goals = base rate * attacker strength * defender strength
