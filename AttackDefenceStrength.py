@@ -3,7 +3,7 @@ import pandas as pd
 def rating_to_strength(rating, base=1.0):
     return base + (rating - 1500) / 750
 
-df = pd.read_csv('/Users/benjaminjordan/Documents/World Cup Model/worldcup/team_rankings.csv')
+df = pd.read_csv('team_rankings.csv')
 
 # Build the rankings dict and team_stats in two lines
 fifa_rankings = dict(zip(df['Team'], df['Points']))
