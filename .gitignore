@@ -1,0 +1,10 @@
+results/champions.csv
+results/deep_runs.csv
+results/group_results.csv
+__pycache__/MatchSim.cpython-312.pyc
+__pycache__/Tournament.cpython-312.pyc
+results/knockout_results.csv
+results/scorelines_all.csv
+results/scorelines_group.csv
+results/scorelines_knockout.csv
+results/summary.csv
