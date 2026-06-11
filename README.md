@@ -1,2 +1,2 @@
-# worldcup
+# World Cup
 World Cup Predictor
