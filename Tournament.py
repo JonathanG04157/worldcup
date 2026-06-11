@@ -2,7 +2,10 @@ from dataclasses import dataclass, field
 from typing import Optional
 from itertools import combinations
 import random
+import MatchSim
+import pandas as pd
 
+team_stats_df = pd.read_csv("team_stats.csv")
 
 @dataclass
 class Match:
@@ -182,18 +185,20 @@ def advance_round(matches):
 # Match simulation
 # ---------------------------------------------------------------------------
 
-def simple_random_match(match, knockout=False):
-    """
-    Random score simulator.
-    In knockout mode, keeps replaying until there is no draw (extra time / pens).
-    """
-    match.home_goals = random.randint(0, 3)
-    match.away_goals = random.randint(0, 3)
+def random_match(match, knockout=False):
 
     if knockout:
-        while match.home_goals == match.away_goals:
-            match.home_goals += random.randint(0, 1)
-            match.away_goals += random.randint(0, 1)
+        result = MatchSim.simulate_knockout_match(match, team_stats)
+        match.home_goals = result['home_goals']
+        match.away_goals = result['away_goals']
+        match.extra_time = result['is_ET']
+        match.penalties = result['is_PEN']
+
+    else:
+        result = MatchSim.simulate_match_poisson(match, team_stats)
+        match.home_goals = result['home_goals']
+        match.away_goals = result['away_goals']
+
 
 
 # ---------------------------------------------------------------------------
@@ -206,7 +211,7 @@ def simulate_group_stage(group_fixtures, simulate_fn):
     print("=" * 55)
     for group_name, matches in group_fixtures.items():
         for match in matches:
-            simulate_fn(match, knockout=False)
+            simulate_fn(match, knockout=False, team_stats = team_stats_df) #added team_stats influence here
         print_group_standings(group_name, groups[group_name], matches)
 
     print("\n  ✓ = automatic qualifier (top 2)")
@@ -230,7 +235,7 @@ def simulate_knockout(r32_matches, simulate_fn):
     for round_name in round_names:
         print(f"\n  --- {round_name} ---")
         for match in current_round:
-            simulate_fn(match, knockout=True)
+            simulate_fn(match, knockout=True, team_stats = team_stats_df) #added team_stats influence here
             print(f"    {match.result}")
 
         if len(current_round) == 1:
@@ -248,7 +253,7 @@ if __name__ == "__main__":
     random.seed(42)  # Change or remove for different results each run
 
     group_fixtures = generate_group_fixtures(groups)
-    simulate_group_stage(group_fixtures, simple_random_match)
+    simulate_group_stage(group_fixtures, random_match)
 
     r32 = build_round_of_32(group_fixtures)
-    simulate_knockout(r32, simple_random_match)
+    simulate_knockout(r32, random_match)
