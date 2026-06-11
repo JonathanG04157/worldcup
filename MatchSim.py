@@ -30,6 +30,9 @@ def simulate_knockout_match(match, team_stats): #knockout stage (determined by e
     home = team_stats[match.home]
     away = team_stats[match.away]
 
+    extra_time = False
+    penalties = False
+
     lambda_home = expected_goals(attack_team = home, defence_team = away)
     lambda_away = expected_goals(attack_team = away, defence_team = home)
 

@@ -5,7 +5,8 @@ import random
 import MatchSim
 import pandas as pd
 
-team_stats_df = pd.read_csv("team_stats.csv")
+team_stats_df = pd.read_csv("team_stats.csv", index_col='Team').to_dict(orient='index')
+
 
 @dataclass
 class Match:
