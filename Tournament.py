@@ -1,5 +1,8 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Optional
+from itertools import combinations
+import random
+
 
 @dataclass
 class Match:
@@ -11,7 +14,7 @@ class Match:
     @property
     def result(self):
         if self.home_goals is None:
-            return "Not played"
+            return f"{self.home} vs {self.away} - Not played"
         return f"{self.home} {self.home_goals} - {self.away_goals} {self.away}"
 
     @property
@@ -23,34 +26,45 @@ class Match:
         elif self.away_goals > self.home_goals:
             return self.away
         return "Draw"
-    
-from itertools import combinations
+
+
+# ---------------------------------------------------------------------------
+# All 12 groups — 2026 World Cup (USA / Canada / Mexico)
+# ---------------------------------------------------------------------------
 
 groups = {
-    'A': ['Qatar', 'Ecuador', 'Senegal', 'Netherlands'],
-    'B': ['England', 'Iran', 'USA', 'Wales'],
-    'C': ['Argentina', 'Saudi Arabia', 'Mexico', 'Poland'],
-    # ... etc
+    'A': ['Mexico', 'South Africa', 'South Korea', 'Czechia'],
+    'B': ['Canada', 'Bosnia and Herzegovina', 'Qatar', 'Switzerland'],
+    'C': ['Brazil', 'Morocco', 'Haiti', 'Scotland'],
+    'D': ['USA', 'Paraguay', 'Australia', 'Turkey'],
+    'E': ['Germany', 'Curacao', 'Ivory Coast', 'Ecuador'],
+    'F': ['Netherlands', 'Japan', 'Sweden', 'Tunisia'],
+    'G': ['Belgium', 'Egypt', 'Iran', 'New Zealand'],
+    'H': ['Spain', 'Cape Verde', 'Saudi Arabia', 'Uruguay'],
+    'I': ['France', 'Senegal', 'Iraq', 'Norway'],
+    'J': ['Argentina', 'Algeria', 'Austria', 'Jordan'],
+    'K': ['Portugal', 'DR Congo', 'Uzbekistan', 'Colombia'],
+    'L': ['England', 'Croatia', 'Ghana', 'Panama'],
 }
 
+
+# ---------------------------------------------------------------------------
+# Group stage
+# ---------------------------------------------------------------------------
+
 def generate_group_fixtures(groups):
-    fixtures = {}
-    for group_name, teams in groups.items():
-        # combinations gives every unique pair: (A,B), (A,C), (A,D), (B,C), (B,D), (C,D)
-        fixtures[group_name] = [Match(home, away) for home, away in combinations(teams, 2)]
-    return fixtures
-
-group_fixtures = generate_group_fixtures(groups)
-
-# See group A's matches:
-for match in group_fixtures['A']:
-    print(match.result)
-# Qatar vs Ecuador - Not played
-# Qatar vs Senegal - Not played
-# ...
+    """Create all round-robin matchups within each group."""
+    return {
+        name: [Match(h, a) for h, a in combinations(teams, 2)]
+        for name, teams in groups.items()
+    }
 
 
 def group_standings(teams, matches):
+    """
+    Return the group table sorted by points, then goal difference, then goals scored.
+    Each entry is (team_name, stats_dict).
+    """
     table = {team: {'pts': 0, 'gf': 0, 'ga': 0} for team in teams}
 
     for m in matches:
@@ -69,81 +83,170 @@ def group_standings(teams, matches):
             table[m.home]['pts'] += 1
             table[m.away]['pts'] += 1
 
-    # Sort by points, then goal difference
     return sorted(
         table.items(),
-        key=lambda x: (x[1]['pts'], x[1]['gf'] - x[1]['ga']),
-        reverse=True
+        key=lambda x: (x[1]['pts'], x[1]['gf'] - x[1]['ga'], x[1]['gf']),
+        reverse=True,
     )
 
-def build_knockout_bracket(group_results):
+
+def print_group_standings(group_name, teams, matches):
+    print(f"\n  Group {group_name} standings:")
+    print(f"  {'Team':<28} Pts  GF  GA  GD")
+    print(f"  {'-'*50}")
+    for i, (team, stats) in enumerate(group_standings(teams, matches)):
+        gd = stats['gf'] - stats['ga']
+        marker = "✓" if i < 2 else " "  # top 2 auto-qualify
+        print(f"  {marker} {team:<27}  {stats['pts']:>2}  {stats['gf']:>2}  {stats['ga']:>2}  {gd:>+3}")
+
+
+# ---------------------------------------------------------------------------
+# Third-place qualification
+# ---------------------------------------------------------------------------
+
+def get_best_third_place_teams(group_fixtures, n=8):
     """
-    Takes the top 2 from each group and builds the R16.
-    World Cup R16 matchups: 1A v 2B, 1C v 2D, 1E v 2F, 1G v 2H
-                            1B v 2A, 1D v 2C, 1F v 2E, 1H v 2G
+    Collect the third-placed team from each group, rank them, and return the
+    best n (the 2026 format sends the top 8 third-place teams through).
     """
-    # Get top 2 from each group
-    qualifiers = {}
-    for group_name, matches in group_results.items():
+    third_place = []
+    for group_name, matches in group_fixtures.items():
         standings = group_standings(groups[group_name], matches)
-        qualifiers[group_name] = {
-            1: standings[0][0],  # group winner
-            2: standings[1][0]   # runner up
-        }
+        team, stats = standings[2]
+        third_place.append((team, stats, group_name))
 
-    r16 = [
-        Match(qualifiers['A'][1], qualifiers['B'][2]),
-        Match(qualifiers['C'][1], qualifiers['D'][2]),
-        Match(qualifiers['E'][1], qualifiers['F'][2]),
-        Match(qualifiers['G'][1], qualifiers['H'][2]),
-        Match(qualifiers['B'][1], qualifiers['A'][2]),
-        Match(qualifiers['D'][1], qualifiers['C'][2]),
-        Match(qualifiers['F'][1], qualifiers['E'][2]),
-        Match(qualifiers['H'][1], qualifiers['G'][2]),
+    # Sort by points, then goal difference, then goals scored
+    third_place.sort(
+        key=lambda x: (x[1]['pts'], x[1]['gf'] - x[1]['ga'], x[1]['gf']),
+        reverse=True,
+    )
+    return [t[0] for t in third_place[:n]]
+
+
+# ---------------------------------------------------------------------------
+# Knockout bracket — Round of 32
+#
+# The official 2026 bracket is complex (third-place slots depend on which
+# groups they came from). This implementation uses the real group-winner /
+# runner-up pairings and fills the third-place slots in ranked order.
+# ---------------------------------------------------------------------------
+
+def build_round_of_32(group_fixtures):
+    """
+    Build the Round of 32 using the official 2026 FIFA bracket structure.
+    Returns a list of 16 Match objects.
+    """
+    q = {}  # qualifiers: q[group][1] = winner, q[group][2] = runner-up
+    for g, matches in group_fixtures.items():
+        standings = group_standings(groups[g], matches)
+        q[g] = {1: standings[0][0], 2: standings[1][0]}
+
+    best_thirds = get_best_third_place_teams(group_fixtures, n=8)
+    t = best_thirds  # t[0] is best third, t[7] is 8th best
+
+    # Official 2026 R32 pairings (simplified — thirds slotted by rank)
+    r32 = [
+        Match(q['A'][2], q['B'][2]),
+        Match(q['C'][1], q['F'][2]),
+        Match(q['E'][1], t[0]),
+        Match(q['F'][1], q['C'][2]),
+        Match(q['E'][2], q['I'][2]),
+        Match(q['I'][1], t[1]),
+        Match(q['A'][1], t[2]),
+        Match(q['L'][1], t[3]),
+        Match(q['G'][1], t[4]),
+        Match(q['D'][1], t[5]),
+        Match(q['H'][1], q['J'][2]),
+        Match(q['K'][2], q['L'][2]),
+        Match(q['B'][1], t[6]),
+        Match(q['D'][2], q['G'][2]),
+        Match(q['J'][1], q['H'][2]),
+        Match(q['K'][1], t[7]),
     ]
-    return r16
+    return r32
 
+
+# ---------------------------------------------------------------------------
+# Knockout progression
+# ---------------------------------------------------------------------------
 
 def advance_round(matches):
-    """Takes a list of played matches and returns the next round's fixtures."""
+    """Pair consecutive winners to form the next round's fixtures."""
     winners = [m.winner for m in matches]
-    # Pair winners: match 0 winner vs match 1 winner, etc.
-    next_round = []
-    for i in range(0, len(winners), 2):
-        next_round.append(Match(winners[i], winners[i+1]))
-    return next_round
+    return [Match(winners[i], winners[i + 1]) for i in range(0, len(winners), 2)]
 
 
-def simulate_knockout(r16_matches, simulate_match_fn):
-    """Runs through all knockout rounds to produce a winner."""
-    rounds = ['Round of 16', 'Quarter-finals', 'Semi-finals', 'Final']
-    current_round = r16_matches
+# ---------------------------------------------------------------------------
+# Match simulation
+# ---------------------------------------------------------------------------
 
-    for round_name in rounds:
-        print(f"\n--- {round_name} ---")
-        for match in current_round:
-            simulate_match_fn(match)   # your model fills in the scores
-            print(match.result)
-        if len(current_round) > 1:
-            current_round = advance_round(current_round)
-        else:
-            print(f"\n🏆 Winner: {current_round[0].winner}")
-
-import random
-
-def simple_random_match(match):
-    """Placeholder — swap this for your real model later."""
+def simple_random_match(match, knockout=False):
+    """
+    Random score simulator.
+    In knockout mode, keeps replaying until there is no draw (extra time / pens).
+    """
     match.home_goals = random.randint(0, 3)
     match.away_goals = random.randint(0, 3)
-    # In knockouts, no draws — add extra time logic here
 
-group_fixtures = generate_group_fixtures(groups)
+    if knockout:
+        while match.home_goals == match.away_goals:
+            match.home_goals += random.randint(0, 1)
+            match.away_goals += random.randint(0, 1)
 
-# Simulate group stage
-for group_name, matches in group_fixtures.items():
-    for match in matches:
-        simple_random_match(match)
 
-# Build and run knockouts
-r16 = build_knockout_bracket(group_fixtures)
-simulate_knockout(r16, simple_random_match)
+# ---------------------------------------------------------------------------
+# Tournament runner
+# ---------------------------------------------------------------------------
+
+def simulate_group_stage(group_fixtures, simulate_fn):
+    print("=" * 55)
+    print("  GROUP STAGE — 2026 FIFA World Cup")
+    print("=" * 55)
+    for group_name, matches in group_fixtures.items():
+        for match in matches:
+            simulate_fn(match, knockout=False)
+        print_group_standings(group_name, groups[group_name], matches)
+
+    print("\n  ✓ = automatic qualifier (top 2)")
+
+
+def simulate_knockout(r32_matches, simulate_fn):
+    """Run R32 → R16 → QF → SF → Final."""
+    round_names = [
+        'Round of 32',
+        'Round of 16',
+        'Quarter-finals',
+        'Semi-finals',
+        'Final',
+    ]
+    current_round = r32_matches
+
+    print("\n" + "=" * 55)
+    print("  KNOCKOUT STAGE")
+    print("=" * 55)
+
+    for round_name in round_names:
+        print(f"\n  --- {round_name} ---")
+        for match in current_round:
+            simulate_fn(match, knockout=True)
+            print(f"    {match.result}")
+
+        if len(current_round) == 1:
+            print(f"\n  🏆 Champion: {current_round[0].winner}")
+            return current_round[0].winner
+
+        current_round = advance_round(current_round)
+
+
+# ---------------------------------------------------------------------------
+# Entry point
+# ---------------------------------------------------------------------------
+
+if __name__ == "__main__":
+    random.seed(42)  # Change or remove for different results each run
+
+    group_fixtures = generate_group_fixtures(groups)
+    simulate_group_stage(group_fixtures, simple_random_match)
+
+    r32 = build_round_of_32(group_fixtures)
+    simulate_knockout(r32, simple_random_match)
