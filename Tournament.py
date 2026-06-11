@@ -10,6 +10,8 @@ class Match:
     away: str
     home_goals: Optional[int] = None
     away_goals: Optional[int] = None
+    extra_time: bool = False
+    penalties: bool = False
 
     @property
     def result(self):
