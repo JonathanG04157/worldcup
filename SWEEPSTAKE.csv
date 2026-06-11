@@ -1,13 +1,13 @@
-﻿Name,Team 1,Team 2,Team 3,Team 4,Avg Team Ranking,Top 12 Ranking
-Archie,Spain (2),Mexico (13),Egypt (26),Ghana (45),21.5,2
-Ben,Argentina (1),Senegal (14),Algeria (25),Uzbekistan (37),19.25,1
-Dan,Netherlands (8),Australia (24),DR Congo (36),Qatar (38),26.5,8
-Hywel,Croatia (11),Austria (22),Czechia (32),Iraq (39),26,11
-Jon,England (4),Switzerland (18),Canada (27),Cabo Verde (44),23.25,4
-Krish,France (3),Iran (19),Panama (30),Saudi Arabia (41),23.25,3
-Lucca ,Germany (10),Türkiye (20),Norway  (28),South Africa (40),24.5,10
-Toby,Morocco (7),Japan (17),Cote D'ivoire (29),New Zealand (48),25.25,7
-Will H,Portugal (5),USA (16),Sweden (31),Curaçao (46),24.5,5
-Will P,Columbia (12),Uruguay (15),Paraguay (33),Haiti (47),26.75,12
-Will S,Brazil (6),South Korea (23),Scotland (34),Jordan (42),26.25,6
-Will T,Belgium (9),Ecuador (21),Tunisia (35),Bosnia & Herzegovina (43),27,9
+﻿Name,Team 1,Team 2,Team 3,Team 4
+Archie,Spain,Mexico,Egypt,Ghana
+Ben,Argentina,Senegal,Algeria,Uzbekistan
+Dan,Netherlands,Australia,DR Congo,Qatar
+Hywel,Croatia,Austria,Czechia,Iraq
+Jon,England,Switzerland,Canada,Cape Verde
+Krish,France,Iran,Panama,Saudi Arabia
+Lucca,Germany,Turkey,Norway,South Africa
+Toby,Morocco,Japan,Ivory Coast,New Zealand
+Will H,Portugal,USA,Sweden,Curacao
+Will P,Colombia,Uruguay,Paraguay,Haiti
+Will S,Brazil,South Korea,Scotland,Jordan
+Will T,Belgium,Ecuador,Tunisia,Bosnia and Herzegovina
