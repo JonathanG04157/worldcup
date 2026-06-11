@@ -185,7 +185,7 @@ def advance_round(matches):
 # Match simulation
 # ---------------------------------------------------------------------------
 
-def random_match(match, knockout=False):
+def random_match(match, knockout=False, team_stats = team_stats_df):
 
     if knockout:
         result = MatchSim.simulate_knockout_match(match, team_stats)
